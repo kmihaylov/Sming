@@ -9,7 +9,7 @@
 #include <Libraries/OneWire/OneWire.h>
 #include "ds18s20.h"
 
-#define DEBUG_DS18S20
+//#define DEBUG_DS18S20
 
 
 #ifdef DEBUG_DS18S20
@@ -122,12 +122,10 @@ void DS18S20::DoSearch(void)
 	else
 	{
       debugx("  DBG: %d DS1820 sensors found",numberOf);
-
-      numberOfread=0;
-      StartReadNext();
 	}
-
-
+	
+	numberOfread=0;
+	StartReadNext();
 }
 
 void DS18S20::StartReadNext()
