@@ -31,10 +31,10 @@ int onMailSent(SmtpClient& client, int code, char* status)
 	MailMessage* mail = client.getCurrentMessage();
 
 	// TODO: The status line contains the unique ID that was given to this email
-	debugf("Mail sent. Status: %s", status);
+	debugf("Mail sent to '%s'. Status: %s", mail->to.c_str(), status);
 
 	// And if there are no more pending emails then you can disconnect from the server
-	if(!client.countPending()) {
+	if(client.countPending() == 0) {
 		debugf("No more mails to send. Quitting...");
 		client.quit();
 	}

@@ -14,6 +14,7 @@ COMPONENT_INCDIRS := \
 
 COMPONENT_DEPENDS := \
 	sming-arch \
+	FlashString \
 	spiffs \
 	http-parser \
 	libb64 \
@@ -27,6 +28,8 @@ COMPONENT_VARS 			:= ENABLE_SSL
 ifeq ($(ENABLE_SSL),1)
 	SMING_FEATURES		:= SSL
 	GLOBAL_CFLAGS		+= -DENABLE_SSL=1
+	COMPONENT_DEPENDS	+= axtls-8266
+	COMPONENT_VARS += SSL_DEBUG
 else
 	SMING_FEATURES		:= none
 	COMPONENT_SRCDIRS	:= $(filter-out %/Ssl,$(COMPONENT_SRCDIRS))
@@ -61,8 +64,6 @@ endif
 CONFIG_VARS				+= WIFI_SSID WIFI_PWD
 ifdef WIFI_SSID
 	APP_CFLAGS			+= -DWIFI_SSID=\"$(WIFI_SSID)\"
-endif
-ifdef WIFI_PWD
 	APP_CFLAGS			+= -DWIFI_PWD=\"$(WIFI_PWD)\"
 endif
 
@@ -92,6 +93,16 @@ ifeq ($(ENABLE_HTTP_SERVER_MULTIPART),1)
 	COMPONENT_DEPENDS	+= MultipartParser
 endif
 
+# => HTTP server
+COMPONENT_VARS			+= HTTP_SERVER_EXPOSE_NAME
+HTTP_SERVER_EXPOSE_NAME ?= 1
+GLOBAL_CFLAGS			+= -DHTTP_SERVER_EXPOSE_NAME=$(HTTP_SERVER_EXPOSE_NAME)
+
+COMPONENT_VARS			+= HTTP_SERVER_EXPOSE_VERSION
+HTTP_SERVER_EXPOSE_VERSION ?= 0
+GLOBAL_CFLAGS			+= -DHTTP_SERVER_EXPOSE_VERSION=$(HTTP_SERVER_EXPOSE_VERSION)
+
+
 ### Debug output parameters
 
 # By default `debugf` does not print file name and line number. If you want this enabled set the directive below to 1
@@ -120,3 +131,18 @@ CONFIG_VARS			+= COM_SPEED_SERIAL
 COM_SPEED_SERIAL	?= $(COM_SPEED)
 APP_CFLAGS			+= -DCOM_SPEED_SERIAL=$(COM_SPEED_SERIAL)
 
+# Task queue counter to check for overflows
+COMPONENT_VARS		+= ENABLE_TASK_COUNT
+ifeq ($(ENABLE_TASK_COUNT),1)
+	GLOBAL_CFLAGS	+= -DENABLE_TASK_COUNT=1
+endif
+
+# Task queue length
+COMPONENT_VARS		+= TASK_QUEUE_LENGTH
+TASK_QUEUE_LENGTH	?= 10
+COMPONENT_CXXFLAGS	+= -DTASK_QUEUE_LENGTH=$(TASK_QUEUE_LENGTH)
+
+# Size of a String object - change this to increase space for Small String Optimisation (SSO)
+COMPONENT_VARS		+= STRING_OBJECT_SIZE
+STRING_OBJECT_SIZE	?= 12
+GLOBAL_CFLAGS		+= -DSTRING_OBJECT_SIZE=$(STRING_OBJECT_SIZE) 

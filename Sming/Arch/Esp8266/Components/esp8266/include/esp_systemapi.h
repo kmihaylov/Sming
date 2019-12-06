@@ -18,12 +18,12 @@ extern "C" {
 
 // ESP SDK config
 #define LWIP_OPEN_SRC
-#define USE_US_TIMER
 
 // Default types
 #define __CORRECT_ISO_CPP_STDLIB_H_PROTO
 #include <limits.h>
 #include "c_types.h"
+#include <assert.h>
 
 // Remove buggy espconn
 #define _NO_ESPCON_
@@ -39,6 +39,7 @@ typedef enum {
 
 #include <sming_attr.h>
 #include "esp_attr.h"
+#include <espinc/pin_mux_register.h>
 #include <ets_sys.h>
 #include <osapi.h>
 #include <gpio.h>
@@ -59,16 +60,22 @@ typedef enum {
 #define REG_SET_BIT(_r, _b)  (*(volatile uint32_t*)(_r) |= (_b))
 #define REG_CLR_BIT(_r, _b)  (*(volatile uint32_t*)(_r) &= ~(_b))
 
-#undef assert
-#ifdef SMING_RELEASE
-#define debugf(fmt, ...)
-#else
-#define debugf debug_i
-#endif
-#define assert(condition) \
-	do {\
-		if (!(condition)) SYSTEM_ERROR("ASSERT: %s %d", __FUNCTION__, __LINE__); \
-	} while(0)
+// Missing from earlier SDKs
+#ifndef ETS_SLC_INUM
+
+#define ETS_SLC_INUM        1
+
+#define ETS_SLC_INTR_ATTACH(func, arg) \
+    ets_isr_attach(ETS_SLC_INUM, (func), (void*)(arg))
+
+#define ETS_SLC_INTR_ENABLE() \
+    ETS_INTR_ENABLE(ETS_SLC_INUM)
+
+#define ETS_SLC_INTR_DISABLE() \
+    ETS_INTR_DISABLE(ETS_SLC_INUM)
+
+#endif // ETS_SLC_INUM
+
 #define SYSTEM_ERROR(fmt, ...) debug_e("ERROR: " fmt "\r\n", ##__VA_ARGS__)
 
 extern void ets_wdt_enable(void);
@@ -122,6 +129,7 @@ extern void ets_isr_unmask(unsigned intr);
 #include "xtensa/xtruntime.h"
 
 /** @brief  Disable interrupts
+ *  @retval Current interrupt level
  *  @note Hardware timer is unaffected if operating in non-maskable mode
  */
 #define noInterrupts() XTOS_SET_INTLEVEL(15)
@@ -129,6 +137,10 @@ extern void ets_isr_unmask(unsigned intr);
 /** @brief  Enable interrupts
 */
 #define interrupts() XTOS_SET_INTLEVEL(0)
+
+/** @brief Restore interrupts to level saved from previous noInterrupts() call
+ */
+#define restoreInterrupts(level) XTOS_RESTORE_INTLEVEL(level)
 
 #ifdef __cplusplus
 }

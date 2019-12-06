@@ -2,6 +2,8 @@
     common.ld
 */
 
+INCLUDE "peripherals.ld"
+
 PHDRS
 {
   dport0_0_phdr PT_LOAD;
@@ -82,52 +84,11 @@ SECTIONS
     _data_end = ABSOLUTE(.);
   } >dram0_0_seg :dram0_0_phdr
 
-  .irom0.text : ALIGN(4)
-  {
-    _irom0_text_start = ABSOLUTE(.);
 
-    *libsmartconfig.a:(.literal .text .literal.* .text.*)
-    *libstdc++.a:(.literal .text .literal.* .text.*)
-    *libat.a:(.literal.* .text.*)
-    *libcrypto.a:(.literal.* .text.*)
-    *libespnow.a:(.literal.* .text.*)
-    *libjson.a:(.literal.* .text.*)
-    *liblwip.a:(.literal.* .text.*)
-    *libmesh.a:(.literal.* .text.*)
-    *libnet80211.a:(.literal.* .text.*)
-    *libsmartconfig.a:(.literal.* .text.*)
-    *libssl.a:(.literal.* .text.*)
-    *libupgrade.a:(.literal.* .text.*)
-    *libwpa.a:(.literal.* .text.*)
-    *libwpa2.a:(.literal.* .text.*)
-    *libwps.a:(.literal.* .text.*)
-
-    *libmbedtls.a:(.literal.* .text.*)
-
-    *libm.a:(.literal .text .literal.* .text.*)
-
-    *(.rodata._ZTV*) /* C++ vtables */
-    *(.irom0.literal .irom.literal .irom.text.literal .irom0.text .irom.text .irom.debug.*)
-
-    /* Generated libraries */
-    *liblwip2.a:(.literal .text .literal.* .text.*)
-    */clib-*.a:*(.literal .text .literal.* .text.* .stub .gnu.warning .gnu.linkonce.literal.* .gnu.linkonce.t.*.literal .gnu.linkonce.t.* .irom.debug.*)
-
-	/* __FUNCTION__ locals */
-    *(.rodata._ZZ*__FUNCTION__)
-    *(.rodata._ZZ*__PRETTY_FUNCTION__)
-    *(.rodata._ZZ*__func__)
-
-    /* debug_e() string pointers */
-    *(.rodata._ZZ*log_string)
-
-    /* const references, mainly in templated code */
-    *(.rodata._ZN*)
-
-    _irom0_text_end = ABSOLUTE(.);
-    _flash_code_end = ABSOLUTE(.);
-  } >irom0_0_seg :irom0_0_phdr
-
+  /*
+  	IRAM is split into .text and .text1 to allow for moving specific
+  	functions into IRAM that would be matched by the irom0.text matcher
+  */
   .text : ALIGN(4)
   {
     _stext = .;
@@ -159,8 +120,74 @@ SECTIONS
     *(.entry.text)
     *(.init.literal)
     *(.init)
+
+    *(.iram.literal .iram.text.literal .iram.text .iram.text.*)
+
+	/*
+		GCC silently ignores section attributes on templated code.
+		The only practical workaround is enforcing sections in the linker script.
+	*/
+	*(.literal._ZN13CallbackTimer*)
+	*(.text._ZN13CallbackTimer*)
+    *(.text._ZNKSt8functionIF*EE*)  /* std::function<any(...)>::operator()() const */
+	*(.text._ZN9Profiling6MinMaxIjE6updateEj)
+
+  } >iram1_0_seg :iram1_0_phdr
+
+  .irom0.text : ALIGN(4)
+  {
+    _irom0_text_start = ABSOLUTE(.);
+
+    *libsmartconfig.a:(.literal .text .literal.* .text.*)
+    *libstdc++.a:(.literal .text .literal.* .text.*)
+    *libat.a:(.literal.* .text.*)
+    *libcrypto.a:(.literal.* .text.*)
+    *libespnow.a:(.literal.* .text.*)
+    *libjson.a:(.literal.* .text.*)
+    *liblwip.a:(.literal.* .text.*)
+    *libmesh.a:(.literal.* .text.*)
+    *libnet80211.a:(.literal.* .text.*)
+    *libsmartconfig.a:(.literal.* .text.*)
+    *libssl.a:(.literal.* .text.*)
+    *libupgrade.a:(.literal.* .text.*)
+    *libwpa.a:(.literal.* .text.*)
+    *libwpa2.a:(.literal.* .text.*)
+    *libwps.a:(.literal.* .text.*)
+
+    *libmbedtls.a:(.literal.* .text.*)
+
+    *libm.a:(.literal .text .literal.* .text.*)
+
+    *(.rodata._ZTV*) /* C++ vtables */
+    *(.irom0.literal .irom.literal .irom.text.literal .irom0.text .irom0.text.* .irom.text .irom.debug.*)
+
+    /* Generated libraries */
+    *liblwip2.a:(.literal .text .literal.* .text.*)
+    */clib-*.a:*(.literal .text .literal.* .text.* .stub .gnu.warning .gnu.linkonce.literal.* .gnu.linkonce.t.*.literal .gnu.linkonce.t.* .irom.debug.*)
+
+	/* __FUNCTION__ locals */
+    *(.rodata._ZZ*__FUNCTION__)
+    *(.rodata._ZZ*__PRETTY_FUNCTION__)
+    *(.rodata._ZZ*__func__)
+
+    /* debug_e() string pointers */
+    *(.rodata._ZZ*log_string)
+
+    /* const references, mainly in templated code */
+    *(.rodata._ZN*)
+
+	*(.rodata._ZZN*)
+
+    _irom0_text_end = ABSOLUTE(.);
+    _flash_code_end = ABSOLUTE(.);
+  } >irom0_0_seg :irom0_0_phdr
+
+
+  /* Pick up any remaining IRAM objects and close the text segment */
+  .text1 : ALIGN(4)
+  {
     *(.literal .text .literal.* .text.* .stub .gnu.warning .gnu.linkonce.literal.* .gnu.linkonce.t.*.literal .gnu.linkonce.t.*)
-	  *(.iram.literal .iram.text.literal .iram.text)
+
     *(.fini.literal)
     *(.fini)
     *(.gnu.version)

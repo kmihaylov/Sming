@@ -33,6 +33,7 @@
 #include <stdlib.h>
 
 #include <Platform/System.h>
+#include <Platform/Timers.h>
 
 static int exitCode = 0;
 static bool done = false;
@@ -43,6 +44,7 @@ extern void host_init_bootloader();
 
 static void cleanup()
 {
+	hw_timer_cleanup();
 	host_flashmem_cleanup();
 	CUartServer::shutdown();
 	sockets_finalise();
@@ -93,7 +95,7 @@ static void pause(int secs)
 {
 	if(secs == 0) {
 		hostmsg("Hit ENTER to continue.");
-		getchar();
+		(void)getchar();
 	} else if(secs > 0) {
 		hostmsg("Waiting for %u seconds...", secs);
 		msleep(secs * 1000);
@@ -110,6 +112,7 @@ int main(int argc, char* argv[])
 		int pause;
 		int exitpause;
 		bool initonly;
+		bool enable_network;
 		UartServerConfig uart;
 		FlashmemConfig flash;
 		struct lwip_param lwip;
@@ -117,6 +120,7 @@ int main(int argc, char* argv[])
 		.pause = -1,
 		.exitpause = -1,
 		.initonly = false,
+		.enable_network = true,
 		.uart =
 			{
 				.enableMask = 0,
@@ -187,6 +191,10 @@ int main(int argc, char* argv[])
 			config.initonly = true;
 			break;
 
+		case opt_nonet:
+			config.enable_network = false;
+			break;
+
 		default:;
 		}
 	}
@@ -204,14 +212,21 @@ int main(int argc, char* argv[])
 	} else {
 		CThread::startup();
 
+		hw_timer_init();
+
 		host_init_tasks();
 
 		sockets_initialise();
 		CUartServer::startup(config.uart);
 
-		bool lwip_initialised = host_lwip_init(&config.lwip);
-		if(lwip_initialised) {
-			host_wifi_lwip_init_complete();
+		bool lwip_initialised = false;
+		if(config.enable_network) {
+			lwip_initialised = host_lwip_init(&config.lwip);
+			if(lwip_initialised) {
+				host_wifi_lwip_init_complete();
+			}
+		} else {
+			hostmsg("Network initialisation skipped as requested");
 		}
 
 		hostmsg("If required, you may start terminal application(s) now");
@@ -223,15 +238,14 @@ int main(int argc, char* argv[])
 
 		init();
 
-		const uint32_t lwipServiceInterval = 50000;
-		uint32_t lwipNextService = 0;
+		OneShotElapseTimer<NanoTime::Milliseconds> lwipServiceTimer;
+		lwipServiceTimer.reset<LWIP_SERVICE_INTERVAL>();
 		while(!done) {
-			auto now = system_get_time();
 			host_service_tasks();
 			host_service_timers();
-			if(lwip_initialised && (now >= lwipNextService)) {
+			if(lwip_initialised && lwipServiceTimer.expired()) {
 				host_lwip_service();
-				lwipNextService = now + lwipServiceInterval;
+				lwipServiceTimer.start();
 			}
 			system_soft_wdt_feed();
 		}

@@ -9,16 +9,17 @@
  ****/
 
 #include "SystemClock.h"
-#include "Platform/RTC.h"
+#include <Platform/RTC.h>
+#include <debug_progmem.h>
 
 SystemClockClass SystemClock;
 
-time_t SystemClockClass::now(TimeZone timeType)
+time_t SystemClockClass::now(TimeZone timeType) const
 {
 	uint32_t systemTime = RTC.getRtcSeconds();
 
-	if(timeType == eTZ_UTC) {
-		systemTime -= timeZoneOffsetSecs;
+	if(timeType == eTZ_Local) {
+		systemTime += timeZoneOffsetSecs;
 	}
 
 	return systemTime;
@@ -26,21 +27,18 @@ time_t SystemClockClass::now(TimeZone timeType)
 
 bool SystemClockClass::setTime(time_t time, TimeZone timeType)
 {
-	if(timeType == eTZ_UTC) {
-		time += timeZoneOffsetSecs;
+	if(timeType == eTZ_Local) {
+		time -= timeZoneOffsetSecs;
 	}
 
-	bool timeSet = RTC.setRtcSeconds(time);
-	if(timeSet) {
-		status = eSCS_Set;
-	}
+	timeSet = RTC.setRtcSeconds(time);
 
 	debugf("time updated? %d", timeSet);
 
 	return timeSet;
 }
 
-String SystemClockClass::getSystemTimeString(TimeZone timeType)
+String SystemClockClass::getSystemTimeString(TimeZone timeType) const
 {
 	DateTime dt(now(timeType));
 	return DateTime(now(timeType)).toFullDateTimeString();

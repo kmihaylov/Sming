@@ -4,7 +4,7 @@
  * http://github.com/SmingHub/Sming
  * All files of the Sming Core are provided under the LGPL v3 license.
  *
- * Support for reading flash memory
+ * FakePgmSpace.h - Support for reading flash memory
  *
  ****/
 
@@ -12,6 +12,7 @@
 
 #include "m_printf.h"
 #include "c_types.h"
+#include <esp_attr.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -57,7 +58,7 @@ typedef uint32_t prog_uint32_t;
 #ifdef ICACHE_FLASH
 
 #ifndef PROGMEM
-#define PROGMEM __attribute__((aligned(4))) __attribute__((section(".irom.text")))
+#define PROGMEM __attribute__((aligned(4))) ICACHE_FLASH_ATTR
 #endif
 
 // flash memory must be read using 32 bit aligned addresses else a processor exception will be triggered
@@ -154,6 +155,7 @@ char *strstr_P(char *haystack, const char *needle_P);
 #define pgm_read_float(addr) (*(const float *)(addr))
 
 #define memcpy_P(dest, src, num) memcpy((dest), (src), (num))
+#define memcmp_P(a1, b1, len) memcmp(a1, b1, len)
 #define strlen_P(a) strlen((a))
 #define strcpy_P(dest, src) strcpy((dest), (src))
 #define strncpy_P(dest, src, size) strncpy((dest), (src), (size))
@@ -170,9 +172,9 @@ char *strstr_P(char *haystack, const char *needle_P);
 /*
  * Define and use a flash string inline
  */
-#define PSTR(_str)                                                                                                     \
+#define PSTR(str)                                                                                                     \
 	(__extension__({                                                                                                   \
-		DEFINE_PSTR_LOCAL(__c, _str);                                                                                  \
+		DEFINE_PSTR_LOCAL(__c, str);                                                                                  \
 		&__c[0];                                                                                                       \
 	}))
 
@@ -180,10 +182,10 @@ char *strstr_P(char *haystack, const char *needle_P);
  * Declare and use a flash string inline.
  * Returns a pointer to a stack-allocated buffer of the precise size required.
  */
-#define _F(_str)                                                                                                       \
+#define _F(str)                                                                                                       \
 	(__extension__({                                                                                                   \
-		DEFINE_PSTR_LOCAL(_flash_str, _str);                                                                           \
-		LOAD_PSTR(_buf, _flash_str);                                                                                   \
+		DEFINE_PSTR_LOCAL(flash_str, str);                                                                           \
+		LOAD_PSTR(_buf, flash_str);                                                                                   \
 		_buf;                                                                                                          \
 	}))
 
@@ -201,23 +203,23 @@ void* memcpy_aligned(void* dst, const void* src, unsigned len);
 int memcmp_aligned(const void* ptr1, const void* ptr2, unsigned len);
 
 /** @brief define a PSTR
- *  @param _name name of string
- *  @param _str the string data
+ *  @param name name of string
+ *  @param str the string data
  */
-#define DEFINE_PSTR(_name, _str) const char _name[] PROGMEM = _str;
+#define DEFINE_PSTR(name, str) const char name[] PROGMEM = str;
 
 /** @brief define a PSTR for local (static) use
- *  @param _name name of string
- *  @param _str the string data
+ *  @param name name of string
+ *  @param str the string data
  */
-#define DEFINE_PSTR_LOCAL(_name, _str) static DEFINE_PSTR(_name, _str)
+#define DEFINE_PSTR_LOCAL(name, str) static DEFINE_PSTR(name, str)
 
 // Declare a global reference to a PSTR instance
-#define DECLARE_PSTR(_name) extern const char _name[] PROGMEM;
+#define DECLARE_PSTR(name) extern const char name[] PROGMEM;
 
 /*
- * Create a local (stack) buffer called _name and load it with flash data.
- * _flash_str is defined locally so the compiler knows its size (length + nul).
+ * Create a local (stack) buffer called `name` and load it with flash data.
+ * `flash_str` is defined locally so the compiler knows its size (length + nul).
  * Size is rounded up to multiple of 4 bytes for fast copy.
  *
  * If defining a string within a function or other local context, must declare static.
@@ -229,13 +231,13 @@ int memcmp_aligned(const void* ptr1, const void* ptr2, unsigned len);
  * 	}
  *
  */
-#define LOAD_PSTR(_name, _flash_str)                                                                                   \
-	char _name[ALIGNUP(sizeof(_flash_str))] __attribute__((aligned(4)));                                               \
-	memcpy_aligned(_name, _flash_str, sizeof(_flash_str));
+#define LOAD_PSTR(name, flash_str)                                                                                   \
+	char name[ALIGNUP(sizeof(flash_str))] __attribute__((aligned(4)));                                               \
+	memcpy_aligned(name, flash_str, sizeof(flash_str));
 
-#define _FLOAD(_pstr)                                                                                                  \
+#define _FLOAD(pstr)                                                                                                  \
 	(__extension__({                                                                                                   \
-		LOAD_PSTR(_buf, _pstr);                                                                                        \
+		LOAD_PSTR(_buf, pstr);                                                                                        \
 		_buf;                                                                                                          \
 	}))
 

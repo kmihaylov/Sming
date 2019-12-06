@@ -40,10 +40,16 @@ version = release
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
+#
+# REMEMBER to update the 'Sphinx Extensions' section in contribute/documentation.rst
+# so developers can more easily locate the appropriate reference documentation.
+#
 extensions = [
     'm2r',
     'breathe',
     'link-roles',
+    'sphinxcontrib.wavedrom',
+    'sphinx_copybutton',
 ]
 
 source_suffix = {
@@ -54,6 +60,11 @@ source_suffix = {
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
+
+#
+offline_skin_js_path = '_static/WaveSkin.js'
+offline_wavedrom_js_path = '_static/WaveDrom.js'
+
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -92,6 +103,15 @@ html_extra_path = [
     '../api/html'
 ]
 
+
+# Provide default stylesheet context for Github links
+html_context = {
+    "display_github": True,
+    "github_user": "SmingHub",
+    "github_repo": "Sming",
+    "github_version": "develop",
+    "conf_py_path": "/docs/source/", # Path in the checkout to the docs root
+}
 
 ##
 # -- Use sphinx_rtd_theme for local builds --------------------------------

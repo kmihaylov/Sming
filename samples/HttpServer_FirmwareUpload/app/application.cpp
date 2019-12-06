@@ -37,37 +37,34 @@ void onFile(HttpRequest& request, HttpResponse& response)
 
 int onUpload(HttpServerConnection& connection, HttpRequest& request, HttpResponse& response)
 {
-	if(!response.isSuccess()) {
-		debug_e("Request failed.");
-		return -1;
-	}
-
 	ReadWriteStream* file = request.files["firmware"];
-	if(file == nullptr) {
+	SignedRbootOutputStream* uploadStream = static_cast<SignedRbootOutputStream*>(file);
+	if(uploadStream == nullptr) {
 		debug_e("Something went wrong with the file upload");
 		return 1;
 	}
 
-	SignedRbootOutputStream* uploadStream = static_cast<SignedRbootOutputStream*>(file);
-
-	if(uploadStream->verifySignature(firmwareVerificationKey)) {
+	if(response.isSuccess() && uploadStream->verifySignature(firmwareVerificationKey)) {
 		rboot_config bootConfig = rboot_get_config();
 		uint8_t slot = bootConfig.current_rom;
 		slot = (slot == 0 ? 1 : 0);
 		Serial.printf("Firmware updated, rebooting to rom %d...\r\n", slot);
 		rboot_set_current_rom(slot);
-		System.restart(
-			1000); // defer the reboot with 1000 milliseconds to give time to the web server to return the response
+		// defer the reboot with 1000 milliseconds to give time to the web server to return the response
+		System.restart(1000);
 
 		response.sendFile("restart.html");
 		response.headers[HTTP_HEADER_CONNECTION] = "close";
-	} else {
-		response.code = HTTP_STATUS_BAD_REQUEST;
-		response.setContentType(MIME_HTML);
-		String html = "<H2 color='#444'>" + uploadStream->errorMessage + "</H2>";
-		response.headers[HTTP_HEADER_CONTENT_LENGTH] = html.length();
-		response.sendString(html);
+
+		return 0;
 	}
+
+	response.code = HTTP_STATUS_BAD_REQUEST;
+	response.setContentType(MIME_HTML);
+	String html = "<H2 color='#444'>" + uploadStream->errorMessage + "</H2>";
+	response.headers[HTTP_HEADER_CONTENT_LENGTH] = html.length();
+	response.sendString(html);
+
 	return 0;
 }
 
@@ -88,7 +85,7 @@ void fileUploadMapper(HttpFiles& files)
 	const rboot_config bootConfig = rboot_get_config();
 	uint8_t currentSlot = bootConfig.current_rom;
 	uint8_t slot = (currentSlot == 0 ? 1 : 0);
-	int romStartAddress = bootConfig.roms[slot];
+	auto romStartAddress = bootConfig.roms[slot];
 
 	size_t maxLength = 0x100000 - (romStartAddress & 0xFFFFF);
 	if(bootConfig.roms[currentSlot] > romStartAddress) {
@@ -103,6 +100,21 @@ void fileUploadMapper(HttpFiles& files)
 
 void startWebServer()
 {
+	HttpServerSettings settings;
+	/* 
+	 * If an error is detected early in a request's message body (like an attempt to upload a firmware image for the 
+	 * wrong slot), the default behaviour of Sming's HTTP server is to send the error response as soon as possible and 
+	 * then close the connection.
+	 * However, some HTTP clients (most notably Firefox!) start listening for a response only after having transmitted 
+	 * the whole request. Such clients may miss the error response entirely and instead report to the user that the 
+	 * connection was closed unexpectedly. Disabling 'closeOnContentError' instructs the server to delay the error 
+	 * response until after the whole message body has been received. This allows all clients to receive the response 
+	 * and display the exact error message to the user, leading to an overall improved user experience.
+	 */
+	settings.closeOnContentError = false;
+	settings.keepAliveSeconds = 2; // default from HttpServer::HttpServer()
+	server.configure(settings);
+
 	server.listen(80);
 	server.paths.set("/", onIndex);
 

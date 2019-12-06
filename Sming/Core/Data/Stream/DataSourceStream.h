@@ -13,6 +13,7 @@
 #include <user_config.h>
 #include "Stream.h"
 #include "WString.h"
+#include <unistd.h>
 
 /** @brief  Data stream type
  *  @ingroup constants
@@ -76,11 +77,26 @@ public:
 	 */
 	int peek() override;
 
+	/** @brief Change position in stream
+	 *  @param offset
+	 *  @param origin SEEK_SET, SEEK_CUR, SEEK_END
+	 *  @retval New position, < 0 on error
+	 *  @note This method is implemented by streams which support random seeking,
+	 *  such as files and memory streams.
+	 */
+	virtual int seekFrom(int offset, unsigned origin)
+	{
+		return -1;
+	}
+
 	/** @brief  Move read cursor
 	 *  @param  len Relative cursor adjustment
 	 *  @retval bool True on success.
 	 */
-	virtual bool seek(int len) = 0;
+	virtual bool seek(int len)
+	{
+		return seekFrom(len, SEEK_CUR) >= 0;
+	}
 
 	/** @brief  Check if all data has been read
      *  @retval bool True on success.
@@ -140,6 +156,12 @@ public:
 	{
 		return nullptr;
 	}
+
+	/**
+	 * @brief Overrides Stream method for more efficient reading
+	 * @note Content is read using `readMemoryBlock()` so read position (for seekable streams) is not changed
+	 */
+	String readString(size_t maxLen = UINT16_MAX);
 };
 
 /** @} */

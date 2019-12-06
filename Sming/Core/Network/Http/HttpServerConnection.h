@@ -23,14 +23,6 @@
  *  @{
  */
 
-#ifndef HTTP_SERVER_EXPOSE_NAME
-#define HTTP_SERVER_EXPOSE_NAME 1
-#endif
-
-#ifndef HTTP_SERVER_EXPOSE_DATE
-#define HTTP_SERVER_EXPOSE_DATE 0
-#endif
-
 class HttpResourceTree;
 class HttpServerConnection;
 
@@ -84,6 +76,11 @@ public:
 		return &request;
 	}
 
+	void setCloseOnContentError(bool close = true)
+	{
+		closeOnContentError = close;
+	}
+
 protected:
 	// HTTP parser methods
 
@@ -102,7 +99,7 @@ protected:
 		return true;
 	}
 
-	void onHttpError(http_errno error) override;
+	bool onHttpError(http_errno error) override;
 
 	// TCP methods
 	void onReadyToSendData(TcpConnectionEvent sourceEvent) override;
@@ -128,6 +125,8 @@ private:
 
 	const BodyParsers* bodyParsers = nullptr;	///< const reference ensures we cannot modify map, only look stuff up
 	HttpBodyParserDelegate bodyParser = nullptr; ///< Active body parser for this message, if any
+	bool closeOnContentError = false;
+	bool hasContentError = false;
 };
 
 /** @} */

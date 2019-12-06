@@ -34,41 +34,6 @@ controlled by the :envvar:`ENABLE_CUSTOM_LWIP` setting.
    Set this to 1 to enable printing of all debug information.
 
 
-SSL support
------------
-
-.. envvar:: ENABLE_SSL
-
-   SSL requires lots of RAM and some intensive processing, so to conserve resources it is disabled by default.
-   If you want to enable it then take a look at the :sample:`Basic_Ssl` sample.
-
-   Set to 1 to enable SSL support using the :component-esp8266:`axtls-8266` Component.
-
-Custom heap allocation
-----------------------
-
-.. envvar:: ENABLE_CUSTOM_HEAP
-
-   If your application is experiencing heap fragmentation then you can try the alternative heap.
-
-   undefined (default)
-      OFF, use standard heap
-
-   1
-      Use :component-esp8266:`custom_heap`
-
-
-Custom PWM
-----------
-
-.. envvar:: ENABLE_CUSTOM_PWM
-
-   undefined
-      use the Espressif PWM driver
-   1 (default)
-      use :component-esp8266:`pwm_open`.
-
-
 Interactive debugging on the device
 -----------------------------------
 

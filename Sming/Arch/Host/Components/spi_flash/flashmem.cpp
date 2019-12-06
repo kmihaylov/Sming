@@ -23,7 +23,12 @@
 
 static int flashFile = -1;
 static size_t flashFileSize = 0x400000U;
-static const char* flashFileName = "flash.bin";
+static char flashFileName[256];
+static const char defaultFlashFileName[] = "flash.bin";
+
+// Top bit of flash address is set to indicate it's actually program memory
+static constexpr uint32_t FLASHMEM_REAL_BIT = 0x80000000U;
+static constexpr uint32_t FLASHMEM_REAL_MASK = ~FLASHMEM_REAL_BIT;
 
 #define SPI_FLASH_SEC_SIZE 4096
 
@@ -37,11 +42,18 @@ static const char* flashFileName = "flash.bin";
 
 bool host_flashmem_init(FlashmemConfig& config)
 {
-	if(config.filename != NULL) {
-		flashFileName = config.filename;
+	if(config.filename != nullptr) {
+		strncpy(flashFileName, config.filename, sizeof(flashFileName));
+		flashFileName[sizeof(flashFileName) - 1] = '\0';
 	} else {
+		size_t len = getHostAppDir(flashFileName, sizeof(flashFileName));
+		if(len + sizeof(defaultFlashFileName) > sizeof(flashFileName)) {
+			return false;
+		}
+		memcpy(&flashFileName[len], defaultFlashFileName, sizeof(defaultFlashFileName));
 		config.filename = flashFileName;
 	}
+
 	flashFile = open(flashFileName, O_CREAT | O_RDWR | O_BINARY, 0644);
 	if(flashFile < 0) {
 		hostmsg("Error opening \"%s\"", flashFileName);
@@ -133,8 +145,23 @@ uint32_t flashmem_write_internal(const void* from, uint32_t toaddr, uint32_t siz
 	return flashmem_write(from, toaddr, size);
 }
 
+static bool readRealMem(void* buffer, uint32_t addr, uint32_t count)
+{
+	if((addr & FLASHMEM_REAL_BIT) == 0) {
+		return false;
+	}
+
+	auto memPtr = reinterpret_cast<const void*>(addr & FLASHMEM_REAL_MASK);
+	memcpy(buffer, memPtr, count);
+	return true;
+}
+
 uint32_t flashmem_read_internal(void* to, uint32_t fromaddr, uint32_t size)
 {
+	if(readRealMem(to, fromaddr, size)) {
+		return size;
+	}
+
 	CHECK_ALIGNMENT(to);
 	CHECK_ALIGNMENT(fromaddr);
 	CHECK_ALIGNMENT(size);
@@ -152,6 +179,10 @@ uint32_t flashmem_write(const void* from, uint32_t toaddr, uint32_t size)
 
 uint32_t flashmem_read(void* to, uint32_t fromaddr, uint32_t size)
 {
+	if(readRealMem(to, fromaddr, size)) {
+		return size;
+	}
+
 	CHECK_RANGE(fromaddr, size);
 	int res = readFlashFile(fromaddr, to, size);
 	return (res < 0) ? 0 : res;
@@ -169,4 +200,9 @@ bool flashmem_erase_sector(uint32_t sector_id)
 	uint8_t tmp[INTERNAL_FLASH_SECTOR_SIZE];
 	memset(tmp, 0xFF, sizeof(tmp));
 	return writeFlashFile(addr, tmp, sizeof(tmp)) == sizeof(tmp);
+}
+
+uint32_t flashmem_get_address(const void* memptr)
+{
+	return reinterpret_cast<uint32_t>(memptr) | FLASHMEM_REAL_BIT;
 }

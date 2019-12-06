@@ -12,9 +12,10 @@
 
 #include "TcpClient.h"
 #include "Url.h"
-#include "WString.h"
-#include "WHashMap.h"
-#include "Data/ObjectQueue.h"
+#include <BitManipulations.h>
+#include <WString.h>
+#include <WHashMap.h>
+#include <Data/ObjectQueue.h>
 #include "Mqtt/MqttPayloadParser.h"
 #include "mqtt-codec/src/message.h"
 #include "mqtt-codec/src/serialiser.h"
@@ -295,7 +296,7 @@ private:
 
 	// states
 	MqttClientState state = eMCS_Ready;
-	MqttPayloadParserState payloadState;
+	MqttPayloadParserState payloadState = {};
 
 	// keep-alives and pings
 	uint16_t keepAlive = 60;

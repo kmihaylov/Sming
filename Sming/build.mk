@@ -79,10 +79,22 @@ TOOLS_BASE		= $(SMING_HOME)/$(OUT_BASE)/tools
 USER_LIBDIR		= $(SMING_HOME)/$(OUT_BASE)/lib
 
 # Git command
+DEBUG_VARS	+= GIT
 GIT ?= git
 
 # CMake command
+DEBUG_VARS	+= CMAKE
 CMAKE ?= cmake
+
+# clang-format command
+DEBUG_VARS	+= CLANG_FORMAT
+CLANG_FORMAT ?= clang-format
+
+# more tools
+DEBUG_VARS += AWK
+# In case 'awk' is an alias for 'gawk' on your system, having 'POSIXLY_CORRECT' in the environment
+# invokes an awk compatibility mode. It has no effect on other awk implementations.
+AWK ?= POSIXLY_CORRECT= awk
 
 
 V ?= $(VERBOSE)
@@ -124,9 +136,14 @@ endif
 ifeq ($(SMING_RELEASE),1)
 	# See: https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html
 	#      for full list of optimization options
-	CFLAGS		+= -Os -DSMING_RELEASE=1
+	# Note: ANSI requires NDEBUG to be defined for correct assert behaviour
+	CFLAGS		+= -Os -DSMING_RELEASE=1 -DNDEBUG
 else ifeq ($(ENABLE_GDB), 1)
-	CFLAGS		+= -Og
+	ifeq ($(SMING_ARCH),Host)
+		CFLAGS		+= -O0
+	else
+		CFLAGS		+= -Og
+	endif
 else
 	CFLAGS		+= -Os -g
 endif

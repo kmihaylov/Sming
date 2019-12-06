@@ -74,10 +74,10 @@ uint16_t GdbFileStream::readMemoryBlock(char* data, int bufSize)
 	}
 
 	int available = gdb_syscall_read(handle, data, std::min(size - pos, size_t(bufSize)));
-	check(available);
+	(void)check(available);
 
 	// Don't move cursor now (waiting seek)
-	gdb_syscall_lseek(handle, pos, SEEK_SET);
+	(void)gdb_syscall_lseek(handle, pos, SEEK_SET);
 
 	return available > 0 ? available : 0;
 }
@@ -106,19 +106,17 @@ size_t GdbFileStream::write(const uint8_t* buffer, size_t size)
 	return written;
 }
 
-bool GdbFileStream::seek(int len)
+int GdbFileStream::seekFrom(int offset, unsigned origin)
 {
-	int newpos = gdb_syscall_lseek(handle, len, SEEK_CUR);
-	if(!check(newpos)) {
-		return false;
+	int newpos = gdb_syscall_lseek(handle, offset, origin);
+	if(check(newpos)) {
+		pos = size_t(newpos);
+		if(pos > size) {
+			size = pos;
+		}
 	}
 
-	pos = size_t(newpos);
-	if(pos > size) {
-		size = pos;
-	}
-
-	return true;
+	return newpos;
 }
 
 String GdbFileStream::id() const

@@ -15,19 +15,37 @@
 
 bool MultipartStream::onCompleted()
 {
-	auto mem = new MemoryDataStream();
-	String line = F("\r\n--") + getBoundary() + F("--\r\n");
-	mem->print(line);
-	stream = mem;
+	if(this->stream != nullptr && !this->stream->isFinished()) {
+		debug_e("Overwriting unfinished stream!");
+	}
+	delete this->stream;
+	this->stream = nullptr;
+
+	auto stream = new MemoryDataStream();
+	stream->ensureCapacity(4 + 16 + 4);
+	stream->print(_F("\r\n--"));
+	stream->print(getBoundary());
+	stream->print(_F("--\r\n"));
+
+	this->stream = stream;
 
 	return true;
 }
 
 void MultipartStream::onNextStream()
 {
-	stream = new MemoryDataStream();
-	String line = F("\r\n--") + getBoundary() + "\r\n";
-	stream->print(line);
+	if(this->stream != nullptr && !this->stream->isFinished()) {
+		debug_e("Overwriting unfinished stream!");
+	}
+	delete this->stream;
+	this->stream = nullptr;
+
+	auto stream = new MemoryDataStream();
+	stream->ensureCapacity(4 + 16 + 4);
+	stream->print(_F("\r\n--"));
+	stream->print(getBoundary());
+	stream->print("\r\n");
+
 	if(result.headers != nullptr) {
 		if(!result.headers->contains(HTTP_HEADER_CONTENT_LENGTH)) {
 			if(result.stream != nullptr && result.stream->available() >= 0) {
@@ -43,6 +61,8 @@ void MultipartStream::onNextStream()
 		result.headers = nullptr;
 	}
 	stream->print("\r\n");
+
+	this->stream = stream;
 
 	nextStream = result.stream;
 }

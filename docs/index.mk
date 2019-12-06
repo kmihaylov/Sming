@@ -4,6 +4,8 @@
 # $2 -> Path
 # $3 -> Source path relative to working root directory (SMINGDIR)
 define GenIndex
+:custom_pagename: $(patsubst ../%,%,$(CMP_$2_README))
+
 $(if $(filter %.rst,$(CMP_$2_README)),
 .. include:: $(call GetIncludePath,$(CMP_$2_README)),
 .. mdinclude:: $(call GetMdIncludePath,$(CMP_$2_README))
@@ -12,7 +14,7 @@ $(if $(filter %.rst,$(CMP_$2_README)),
 References
 ----------
 $(if $(findstring $3=,$(SUBMODULE_URLS)),
-* `Soure Code <$(call GetSubmoduleURL,$3)>`__ (submodule, may be patched).,
+* `Source Code <$(call GetSubmoduleURL,$3)>`__ (submodule, may be patched).,
 * :source:`Source Code <$3>`)
 $(foreach d,$(sort $(CMP_$2_DEPEND_DIRS)),
 * :doc:`$d/index` Component

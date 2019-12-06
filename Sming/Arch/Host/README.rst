@@ -25,14 +25,8 @@ Ensure you are using relatively recent compilers, with 32-bit libraries availabl
 For Linux, you may require the ``gcc-multilib`` and ``g++-multilib``
 packages to build 32-bit executables on a 64-bit OS.
 
-For Windows, make sure your ``MinGW`` distro is up to date. If you run
-``gcc --version`` you should get ``gcc (MinGW.org GCC-6.3.0-1) 6.3.0``
-or later. If it’s older, execute these commands:
-
-.. code-block:: powershell
-
-   mingw-get update
-   mingw-get upgrade
+For Windows, make sure your ``MinGW`` distro is up to date.
+See :doc:`/arch/esp8266/getting-started/windows-manual` for further details.
 
 Building
 --------
@@ -88,7 +82,7 @@ used to communicate with the emulator.
 
 Alternatively, you can run the application manually like this:
 
-``out/firmware/app --pause --uart=0 --uart=1``
+``out/Host/debug/firmware/app --pause --uart=0 --uart=1``
 
 Now start a telnet session for each serial port, in separate command windows::
 
@@ -151,6 +145,10 @@ See :source:`Sming/Arch/Host/Core/DigitalHooks.h` for further details.
 
 Network
 ~~~~~~~
+
+.. note::
+
+   Network support is enabled by default. If you don't need it, use the ``--nonet`` option.
 
 Linux
 ^^^^^

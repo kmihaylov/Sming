@@ -10,7 +10,7 @@
 
 #pragma once
 
-#define SMING_VERSION "3.8.0" // Major Minor Sub
+#include "SmingVersion.h"
 
 #include "gdb/gdb_hooks.h"
 #include "WiringFrameworkIncludes.h"
@@ -35,7 +35,7 @@
 #include "Platform/AccessPoint.h"
 #include "Platform/WDT.h"
 
-#include "Network/DNSServer.h"
+#include "Network/DnsServer.h"
 #include "Network/HttpClient.h"
 #include "Network/MqttClient.h"
 #include "Network/NtpClient.h"

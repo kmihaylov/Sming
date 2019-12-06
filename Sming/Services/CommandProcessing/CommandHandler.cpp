@@ -7,7 +7,7 @@
 
 #include "CommandHandler.h"
 #include "CommandDelegate.h"
-#include "SmingCore.h" // SMING_VERSION
+#include <SmingVersion.h>
 
 #ifndef LWIP_HASH_STR
 #define LWIP_HASH_STR ""
@@ -82,12 +82,12 @@ void CommandHandler::procesHelpCommand(String commandLine, CommandOutput* comman
 	debugf("HelpCommand entered");
 	commandOutput->println(_F("Commands available are :"));
 	for(unsigned idx = 0; idx < registeredCommands->count(); idx++) {
-		commandOutput->printf(registeredCommands->valueAt(idx).commandName.c_str());
-		commandOutput->printf(" | ");
-		commandOutput->printf(registeredCommands->valueAt(idx).commandGroup.c_str());
-		commandOutput->printf(" | ");
-		commandOutput->printf(registeredCommands->valueAt(idx).commandHelp.c_str());
-		commandOutput->printf("\r\n");
+		commandOutput->print(registeredCommands->valueAt(idx).commandName);
+		commandOutput->print(" | ");
+		commandOutput->print(registeredCommands->valueAt(idx).commandGroup);
+		commandOutput->print(" | ");
+		commandOutput->print(registeredCommands->valueAt(idx).commandHelp);
+		commandOutput->print("\r\n");
 	}
 }
 

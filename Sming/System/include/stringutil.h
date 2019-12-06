@@ -43,9 +43,14 @@ int strcasecmp(const char* s1, const char* s2);
  *  @note non-ANSI GNU C library extension
 */
 void* memmem(const void* haystack, size_t haystacklen, const void* needle, size_t needlelen);
+
+void *memrchr(const void *s, int c, size_t n);
+
 #endif
 
-static inline signed char hexchar(unsigned char c)
+int memicmp(const void* buf1, const void* buf2, size_t len);
+
+static inline char hexchar(unsigned char c)
 {
 	if(c < 10)
 		return '0' + c;

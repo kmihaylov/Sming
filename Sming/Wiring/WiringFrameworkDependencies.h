@@ -14,8 +14,6 @@
 #include <math.h>
 #include <string.h>
 
-#define F_CPU 80000000L ////?
-
 #include "WConstants.h"
 #include "BitManipulations.h"
 #include "FakePgmSpace.h"
@@ -28,3 +26,4 @@ using std::isinf;
 using std::isnan;
 using std::max;
 using std::min;
+using std::swap;

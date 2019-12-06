@@ -34,10 +34,6 @@
  * 	This has been changed to use function wrappers, so init heap no longer required and
  * 	code can be simplified.
  *
- *	Added user functions:
- *
- *		malloc_enable_logging
- *		malloc_set_log_threshold
  *
  */
 
@@ -45,6 +41,7 @@
 #include <debug_progmem.h>
 #include <esp_attr.h>
 
+// Names for the actual implementations
 #ifdef ARCH_HOST
 #define F_MALLOC malloc
 #define F_CALLOC calloc
@@ -114,6 +111,8 @@ static struct {
 	size_t count;   // Number of allocations called
 } stats;
 
+static size_t allocationLimit = 0;
+
 static MallocCountCallback userCallback = nullptr;
 
 /* add allocation to statistics */
@@ -153,31 +152,51 @@ size_t getPeak()
 }
 
 /* user function to reset the peak allocation to current */
-extern void resetPeak()
+void resetPeak()
 {
 	stats.peak = stats.current;
 }
 
+size_t getTotal()
+{
+	return stats.total;
+}
+
+void resetTotal()
+{
+	stats.total = 0;
+}
+
 /* user function to return total number of allocations */
-extern size_t getAllocCount()
+size_t getAllocCount()
 {
 	return stats.count;
 }
 
+/* sets the maximum available memory */
+void setAllocLimit(size_t maxBytes)
+{
+	allocationLimit = maxBytes;
+}
+
 /* user function to supply a memory profile callback */
-extern void setCallback(MallocCountCallback callback)
+void setCallback(MallocCountCallback callback)
 {
 	userCallback = callback;
 }
 
 /****************************************************/
-/* exported symbols that overlay the libc functions */
+/* malloc_count function implementations             */
 /****************************************************/
 
-/* exported malloc symbol that overrides loading from libc */
-extern "C" void* WRAP(F_MALLOC)(size_t size)
+extern "C" void* mc_malloc(size_t size)
 {
 	if(size == 0) {
+		return nullptr;
+	}
+
+	if(allocationLimit != 0 && stats.current + size > allocationLimit) {
+		log("malloc(%u) -> exceeds maximum (current is %u bytes)", size, stats.current);
 		return nullptr;
 	}
 
@@ -197,22 +216,16 @@ extern "C" void* WRAP(F_MALLOC)(size_t size)
 	return ret;
 }
 
-#ifndef ARCH_HOST
-extern "C" void* WRAP(pvPortZalloc)(size_t size)
+extern "C" void* mc_zalloc(size_t size)
 {
-	auto ptr = WRAP(F_MALLOC)(size);
+	auto ptr = mc_malloc(size);
 	if(ptr != nullptr) {
 		memset(ptr, 0, size);
 	}
 	return ptr;
 }
 
-extern "C" void* WRAP(pvPortZallocIram)(size_t size, const char* file, int line)
-	__attribute__((alias("__wrap_pvPortZalloc")));
-#endif // ARCH_HOST
-
-/* exported free symbol that overrides loading from libc */
-extern "C" void WRAP(F_FREE)(void* ptr)
+extern "C" void mc_free(void* ptr)
 {
 	// free(nullptr) is no operation
 	if(ptr == nullptr) {
@@ -238,37 +251,34 @@ extern "C" void WRAP(F_FREE)(void* ptr)
 	REAL(F_FREE)(ptr);
 }
 
-/* exported calloc() symbol that overrides loading from libc, implemented using our malloc */
-extern "C" void* WRAP(F_CALLOC)(size_t nmemb, size_t size)
+extern "C" void* mc_calloc(size_t nmemb, size_t size)
 {
-	size *= nmemb;
-	if(size == 0) {
-		return nullptr;
-	}
-
-	void* ret = malloc(size);
-	memset(ret, 0, size);
-	return ret;
+	return mc_zalloc(nmemb * size);
 }
 
-/* exported realloc() symbol that overrides loading from libc */
-extern "C" void* WRAP(F_REALLOC)(void* ptr, size_t size)
+extern "C" void* mc_realloc(void* ptr, size_t size)
 {
 	// special case size == 0 -> free()
 	if(size == 0) {
-		WRAP(F_FREE)(ptr);
+		mc_free(ptr);
 		return nullptr;
 	}
 
 	// special case ptr == 0 -> malloc()
 	if(ptr == nullptr) {
-		return WRAP(F_MALLOC)(size);
+		return mc_malloc(size);
 	}
 
 	if(*GET_SENTINEL(ptr) != sentinel) {
 		log("free(%p) has no sentinel !!! memory corruption?", ptr);
 		// ... or memory not allocated by our malloc()
 		return REAL(F_REALLOC)(ptr, size);
+	}
+
+	// For testing purposes we'll assume the reallocation won't be in-place
+	if(allocationLimit != 0 && stats.current + size > allocationLimit) {
+		log("remalloc(%u) -> exceeds maximum (current is %u bytes)", size, stats.current);
+		return nullptr;
 	}
 
 	ptr = (char*)ptr - alignment;
@@ -299,3 +309,47 @@ static __attribute__((destructor)) void finish()
 }
 
 }; // namespace MallocCount
+
+/****************************************************/
+/* exported symbols that overlay the libc functions */
+/****************************************************/
+
+extern "C" void* WRAP(malloc)(size_t) __attribute__((alias("mc_malloc")));
+extern "C" void* WRAP(calloc)(size_t, size_t) __attribute__((alias("mc_calloc")));
+extern "C" void* WRAP(realloc)(void*, size_t) __attribute__((alias("mc_realloc")));
+extern "C" void WRAP(free)(void*) __attribute__((alias("mc_free")));
+
+#ifdef ARCH_HOST
+
+using namespace MallocCount;
+
+void* operator new(size_t size)
+{
+	return mc_malloc(size);
+}
+
+void* operator new[](size_t size)
+{
+	return mc_malloc(size);
+}
+
+void operator delete(void* ptr)
+{
+	mc_free(ptr);
+}
+
+void operator delete[](void* ptr)
+{
+	mc_free(ptr);
+}
+
+#else
+
+extern "C" void* WRAP(pvPortMalloc)(size_t) __attribute__((alias("mc_malloc")));
+extern "C" void* WRAP(pvPortCalloc)(size_t) __attribute__((alias("mc_calloc")));
+extern "C" void* WRAP(pvPortRealloc)(void*, size_t) __attribute__((alias("mc_realloc")));
+extern "C" void* WRAP(pvPortZalloc)(size_t) __attribute__((alias("mc_zalloc")));
+extern "C" void* WRAP(pvPortZallocIram)(size_t, const char*, int) __attribute__((alias("mc_zalloc")));
+extern "C" void* WRAP(vPortFree)(void*) __attribute__((alias("mc_free")));
+
+#endif

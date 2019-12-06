@@ -15,9 +15,11 @@
 
 #pragma once
 
-#include "WiringFrameworkDependencies.h"
-#include "Data/Stream/ReadWriteStream.h"
-#include "driver/uart.h"
+#include <stdint.h>
+#include <Delegate.h>
+#include <Data/Stream/ReadWriteStream.h>
+#include <BitManipulations.h>
+#include <driver/uart.h>
 
 #define UART_ID_0 0 ///< ID of UART 0
 #define UART_ID_1 1 ///< ID of UART 1
@@ -88,10 +90,10 @@ enum SerialMode { SERIAL_FULL = UART_FULL, SERIAL_RX_ONLY = UART_RX_ONLY, SERIAL
 
 /** @brief Notification and error status bits */
 enum SerialStatus {
-	eSERS_BreakDetected = UIBD, ///< Break condition detected on receive line
-	eSERS_Overflow = UIOF,		///< Receive buffer overflowed
-	eSERS_FramingError = UIFR,  ///< Receive framing error
-	eSERS_ParityError = UIPE,   ///< Parity check failed on received data
+	eSERS_BreakDetected, ///< Break condition detected on receive line
+	eSERS_Overflow,		 ///< Receive buffer overflowed
+	eSERS_FramingError,  ///< Receive framing error
+	eSERS_ParityError,   ///< Parity check failed on received data
 };
 
 /// Hardware serial class
@@ -438,10 +440,7 @@ public:
 	 * @retval unsigned Status flags, combination of SerialStatus bits
 	 * @see SerialStatus
 	 */
-	unsigned getStatus()
-	{
-		return uart_get_status(uart);
-	}
+	unsigned getStatus();
 
 private:
 	int uartNr = -1;
@@ -462,7 +461,7 @@ private:
 	 * @param status UART status flags indicating cause(s) of interrupt
 	 */
 	static void IRAM_ATTR staticCallbackHandler(uart_t* uart, uint32_t status);
-	static void staticOnStatusChange(uint32_t param);
+	static void staticOnStatusChange(void* param);
 	void invokeCallbacks();
 
 	/**

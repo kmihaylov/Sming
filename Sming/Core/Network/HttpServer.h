@@ -29,6 +29,8 @@ typedef struct {
 	int keepAliveSeconds = 0;	  ///< default seconds to keep the connection alive before closing it
 	int minHeapSize = -1;		   ///< min heap size that is required to accept connection, -1 means use server default
 	bool useDefaultBodyParsers = 1; ///< if the default body parsers,  as form-url-encoded, should be used
+	bool closeOnContentError =
+		true; ///< close the connection if a body parser or resource fails to parse the body content.
 #ifdef ENABLE_SSL
 	int sslSessionCacheSize =
 		10; ///< number of SSL session ids to cache. Setting this to 0 will disable SSL session resumption.
@@ -66,6 +68,16 @@ public:
 	void setBodyParser(const String& contentType, HttpBodyParserDelegate parser)
 	{
 		bodyParsers[contentType] = parser;
+	}
+
+	/**
+	 * @brief Allows content-type specific parsing of the body based on content-type.
+	 * @param mimeType
+	 * @param  parser
+	 */
+	void setBodyParser(MimeType mimeType, HttpBodyParserDelegate parser)
+	{
+		bodyParsers[ContentType::toString(mimeType)] = parser;
 	}
 
 	/** @deprecated Use `paths.set()` instead */

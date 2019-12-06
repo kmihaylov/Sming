@@ -29,19 +29,26 @@ int msleep(unsigned ms)
 	return nanosleep(&req, &rem);
 }
 
-void getHostAppDir(char* path, size_t bufSize)
+size_t getHostAppDir(char* path, size_t bufSize)
 {
-	size_t len __attribute__((unused));
+	if(path == NULL ||bufSize == 0) {
+		return 0;
+	}
+
+	size_t len;
 	char sep;
 #ifdef __WIN32
 	len = GetModuleFileName(NULL, path, bufSize);
 	sep = '\\';
 #else
-	len = readlink("/proc/self/exe", path, bufSize);
+	len = readlink("/proc/self/exe", path, bufSize - 1);
 	sep = '/';
 #endif
+	path[len] = '\0';
 	char* p = strrchr(path, sep);
-	if(p) {
+	if(p != NULL) {
 		p[1] = '\0';
+		len = 1 + p - path;
 	}
+	return len;
 }

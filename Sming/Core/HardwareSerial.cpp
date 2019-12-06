@@ -14,9 +14,10 @@
 #include <cstdarg>
 #include "Platform/System.h"
 #include "m_printf.h"
+#include <espinc/uart_register.h>
 
 #if ENABLE_CMD_EXECUTOR
-#include "../Services/CommandProcessing/CommandExecutor.h"
+#include <Services/CommandProcessing/CommandExecutor.h>
 #endif
 
 HardwareSerial Serial(UART_ID_0);
@@ -104,19 +105,19 @@ void HardwareSerial::systemDebugOutput(bool enabled)
 
 void HardwareSerial::invokeCallbacks()
 {
-	uart_disable_interrupts();
+	(void)uart_disable_interrupts();
 	auto status = callbackStatus;
 	callbackStatus = 0;
 	callbackQueued = false;
 	uart_restore_interrupts();
 
 	// Transmit complete ?
-	if(bitRead(status, UIFE) && transmitComplete) {
+	if((status & UART_TXFIFO_EMPTY_INT_ST) != 0 && transmitComplete) {
 		transmitComplete(*this);
 	}
 
 	// RX FIFO Full or RX FIFO Timeout or RX Overflow ?
-	if(status & (_BV(UIFF) | _BV(UITO) | _BV(UIOF))) {
+	if(status & (UART_RXFIFO_FULL_INT_ST | UART_RXFIFO_TOUT_INT_ST | UART_RXFIFO_OVF_INT_ST)) {
 		auto receivedChar = uart_peek_last_char(uart);
 		if(HWSDelegate) {
 			HWSDelegate(*this, receivedChar, uart_rx_available(uart));
@@ -132,12 +133,35 @@ void HardwareSerial::invokeCallbacks()
 	}
 }
 
+unsigned HardwareSerial::getStatus()
+{
+	unsigned status = 0;
+	unsigned ustat = uart_get_status(uart);
+	if(ustat & UART_BRK_DET_INT_ST) {
+		bitSet(status, eSERS_BreakDetected);
+	}
+
+	if(ustat & UART_RXFIFO_OVF_INT_ST) {
+		bitSet(status, eSERS_Overflow);
+	}
+
+	if(ustat & UART_FRM_ERR_INT_ST) {
+		bitSet(status, eSERS_FramingError);
+	}
+
+	if(ustat & UART_PARITY_ERR_INT_ST) {
+		bitSet(status, eSERS_ParityError);
+	}
+
+	return status;
+}
+
 /*
  * Called via task queue
  */
-void HardwareSerial::staticOnStatusChange(uint32_t param)
+void HardwareSerial::staticOnStatusChange(void* param)
 {
-	auto serial = reinterpret_cast<HardwareSerial*>(param);
+	auto serial = static_cast<HardwareSerial*>(param);
 	if(serial != nullptr) {
 		serial->invokeCallbacks();
 	}
@@ -157,7 +181,7 @@ void HardwareSerial::staticCallbackHandler(uart_t* uart, uint32_t status)
 
 	// If required, queue a callback
 	if((status & serial->statusMask) != 0 && !serial->callbackQueued) {
-		System.queueCallback(staticOnStatusChange, uint32_t(serial));
+		System.queueCallback(staticOnStatusChange, serial);
 		serial->callbackQueued = true;
 	}
 }
@@ -170,11 +194,11 @@ bool HardwareSerial::updateUartCallback()
 #else
 	if(HWSDelegate) {
 #endif
-		mask |= _BV(UIFF) | _BV(UITO) | _BV(UIOF);
+		mask |= UART_RXFIFO_FULL_INT_ST | UART_RXFIFO_TOUT_INT_ST | UART_RXFIFO_OVF_INT_ST;
 	}
 
 	if(transmitComplete) {
-		mask |= _BV(UIFE);
+		mask |= UART_TXFIFO_EMPTY_INT_ST;
 	}
 
 	statusMask = mask;

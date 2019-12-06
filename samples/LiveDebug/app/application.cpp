@@ -17,10 +17,18 @@ const unsigned MAX_COMMAND_LENGTH = 64;
 /*
  * This example uses the hardware timer for best timing accuracy. There is only one of these on the ESP8266,
  * so it may not be available if another module requires it.
- * Most timing applications can use a SimpleTimer, which is good for intervals of up to about 268 seconds.
- * For longer intervals, use a Timer.
+ *
+ * Most software timing applications can use a `SimpleTimer`, which is good for intervals of up to about
+ * 429 seconds, or around 2 hours if you compile with USE_US_TIMER=0.
+ *
+ * For longer intervals and delegate callback support use a `Timer`.
  */
 #define TIMER_TYPE TIMERTYPE_HARDWARE
+
+/*
+ * We use the timer to blink the LED at this rate
+ */
+#define BLINK_INTERVAL_MS 1000
 
 /*
  * HardwareTimer defaults to non-maskable mode, so the timer callback cannot be interrupted even by the
@@ -29,7 +37,7 @@ const unsigned MAX_COMMAND_LENGTH = 64;
 #define HWTIMER_TYPE eHWT_Maskable
 
 #if TIMER_TYPE == TIMERTYPE_HARDWARE
-HardwareTimer procTimer(HWTIMER_TYPE);
+HardwareTimer1<TIMER_CLKDIV_16, HWTIMER_TYPE> procTimer;
 // Hardware timer callbacks must always be in IRAM
 #define CALLBACK_ATTR IRAM_ATTR
 #elif TIMER_TYPE == TIMERTYPE_SIMPLE
@@ -374,7 +382,7 @@ COMMAND_HANDLER(queueBreak)
 {
 	Serial.println(_F("Queuing a call to gdb_do_break()\r\n"
 					  "This differs from `break` in that a console read will be in progress when the break is called"));
-	System.queueCallback(TaskCallback(handleCommand_break));
+	System.queueCallback(handleCommand_break);
 	return true;
 }
 
@@ -611,7 +619,7 @@ void onConsoleReadCompleted(const GdbSyscallInfo& info)
 void readConsole()
 {
 	consoleOffRequested = false;
-	System.queueCallback([](uint32_t) {
+	System.queueCallback(InterruptCallback([]() {
 		showPrompt();
 		if(gdb_present() == eGDB_Attached) {
 			// Issue the syscall
@@ -633,7 +641,7 @@ void readConsole()
 			 * GDB is either detached or not present, serial callback will process input
 			 */
 		}
-	});
+	}));
 }
 
 extern "C" void gdb_on_attach(bool attached)
@@ -660,6 +668,16 @@ extern "C" void gdb_on_attach(bool attached)
 	}
 }
 
+static void printTimerDetails()
+{
+	Serial.print(procTimer);
+	Serial.print(", maxTicks = ");
+	Serial.print(procTimer.maxTicks());
+	Serial.print(", maxTime = ");
+	Serial.print(procTimer.micros().ticksToTime(procTimer.maxTicks()).value());
+	Serial.println();
+}
+
 void GDB_IRAM_ATTR init()
 {
 	Serial.begin(SERIAL_BAUD_RATE);
@@ -677,10 +695,7 @@ void GDB_IRAM_ATTR init()
 	}
 
 	pinMode(LED_PIN, OUTPUT);
-#if TIMER_TYPE == TIMERTYPE_SIMPLE
-	procTimer.setCallback(SimpleTimerCallback(blink));
-	procTimer.startMs(1000, true);
-#else
-	procTimer.initializeMs(1000, blink).start();
-#endif
+	procTimer.initializeMs<BLINK_INTERVAL_MS>(blink).start();
+
+	printTimerDetails();
 }

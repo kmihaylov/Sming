@@ -10,11 +10,10 @@
 
 #include "TcpConnection.h"
 
-#include "Data/Stream/DataSourceStream.h"
-#include "Platform/WDT.h"
+#include <Data/Stream/DataSourceStream.h>
+#include <Platform/WDT.h>
 #include "NetUtils.h"
-#include "WString.h"
-#include "IpAddress.h"
+#include <WString.h>
 
 #ifdef DEBUG_TCP_EXTENDED
 #define debug_tcp(fmt, ...) debug_d(fmt, ##__VA_ARGS__)
@@ -193,7 +192,7 @@ int TcpConnection::write(const char* data, int len, uint8_t apiflags)
 
 #ifdef ENABLE_SSL
 	if(ssl) {
-		u16_t expected = ssl_calculate_write_length(ssl, len);
+		int expected = ssl_calculate_write_length(ssl, len);
 		u16_t available = tcp ? tcp_sndbuf(tcp) : 0;
 		debug_tcp("SSL: Expected: %d, Available: %d", expected, available);
 		if(expected < 0 || available < expected) {
@@ -434,7 +433,7 @@ err_t TcpConnection::internalOnConnected(err_t err)
 			debug_d("SSL: Switching to 160 MHz");
 			System.setCpuFrequency(eCF_160MHz); // For shorter waiting time, more power consumption.
 #endif
-			debug_d("SSL: handshake start (%d ms)", millis());
+			debug_d("SSL: handshake start");
 
 			ssl_ctx_free(sslContext);
 			sslContext = ssl_ctx_new(SSL_CONNECT_IN_PARTS | localSslOptions, 1);
@@ -454,27 +453,27 @@ err_t TcpConnection::internalOnConnected(err_t err)
 				}
 			}
 
-			debug_d("SSL: Session Id Length: %u", sslSessionId->getLength());
-			if(sslSessionId->isValid()) {
+			if(sslSessionId != nullptr && sslSessionId->isValid()) {
 				debug_d("-----BEGIN SSL SESSION PARAMETERS-----");
 				debug_hex(DBG, "Session", sslSessionId->getValue(), sslSessionId->getLength());
 				debug_d("\n-----END SSL SESSION PARAMETERS-----");
 			}
 
-			ssl =
-				ssl_client_new(sslContext, clientfd, sslSessionId->getValue(), sslSessionId->getLength(), sslExtension);
+			ssl = ssl_client_new(sslContext, clientfd, sslSessionId != nullptr ? sslSessionId->getValue() : nullptr,
+								 sslSessionId != nullptr ? sslSessionId->getLength() : 0, sslExtension);
 			if(ssl_handshake_status(ssl) != SSL_OK) {
 				debug_d("SSL: handshake is in progress...");
 				return SSL_OK;
+			}
+
+			if(sslSessionId != nullptr) {
+				sslSessionId->assign(ssl->session_id, ssl->sess_id_size);
 			}
 
 #ifndef SSL_SLOW_CONNECT
 			debug_d("SSL: Switching back 80 MHz");
 			System.setCpuFrequency(eCF_80MHz);
 #endif
-			if(sslSessionId != nullptr) {
-				sslSessionId->assign(ssl->session_id, ssl->sess_id_size);
-			}
 		}
 	}
 #endif
@@ -538,7 +537,7 @@ err_t TcpConnection::internalOnReceive(pbuf* p, err_t err)
 		if(read_bytes == 0) {
 			if(!sslConnected && ssl_handshake_status(ssl) == SSL_OK) {
 				sslConnected = true;
-				debug_d("SSL: Handshake done (%d ms).", millis());
+				debug_d("SSL: Handshake done");
 #ifndef SSL_SLOW_CONNECT
 				debug_d("SSL: Switching back to 80 MHz");
 				System.setCpuFrequency(eCF_80MHz); // Preserve some CPU cycles
@@ -576,12 +575,11 @@ err_t TcpConnection::internalOnReceive(pbuf* p, err_t err)
 
 	if(p != nullptr) {
 		pbuf_free(p);
+		checkSelfFree();
 	} else {
 		close();
-		closeTcpConnection(tcp);
 	}
 
-	checkSelfFree();
 	debug_tcp("<TCP receive");
 	return res;
 }

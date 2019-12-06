@@ -44,17 +44,25 @@
  * These changes have a knock-on effect in that if any of the allocations in an expression fail, then the result, tmp,
  * will be unpredictable.
  *
+ * @author Nov 2019 mikee47 <mike@sillyhouse.net>
+ *
+ * Small String Optimisation (SSO). Based on the Arduino ESP8266 core implentation.
+ * An empty String object now consumes 12 bytes (from 8) but provides an SSO capacity of 11 characters.
+ * Capacity and length types changed to size_t, thus String is no longer restricted to 64K.
+ *
  */
 
 #pragma once
 
 #ifdef __cplusplus
 
-#include "WiringFrameworkDependencies.h"
-#include "WVector.h"
+#include "WConstants.h"
+#include <stddef.h>
+#include <string.h>
+#include <sming_attr.h>
 
-// @deprecated Should not be using String in interrupt context
-#define STRING_IRAM_ATTR // IRAM_ATTR
+#include <FlashString/String.hpp>
+using FlashString = FSTR::String;
 
 #ifndef __GXX_EXPERIMENTAL_CXX0X__
 #define __GXX_EXPERIMENTAL_CXX0X__
@@ -88,9 +96,6 @@ typedef const __FlashStringHelper* flash_string_t;
  */
 #define F(string_literal) String(FPSTR(PSTR(string_literal)), sizeof(string_literal) - 1)
 
-// Forward declaration for counted flash string - see FlashString.h
-struct FlashString;
-
 /**
  * @brief The string class
  *
@@ -106,7 +111,7 @@ class String
     // complications of an operator bool(). for more information, see:
     // http://www.artima.com/cppsource/safebool.html
     typedef void (String::*StringIfHelperType)() const;
-    void STRING_IRAM_ATTR StringIfHelper() const {}
+    void StringIfHelper() const {}
 
   public:
     // Use these for const references, e.g. in function return values
@@ -119,25 +124,44 @@ class String
        if the initial value is null or invalid, or if memory allocation
        fails, the string will be marked as invalid (i.e. "if (s)" will be false).
     */
-    STRING_IRAM_ATTR String(const char *cstr = nullptr);
-    STRING_IRAM_ATTR String(const char *cstr, unsigned int length);
-    STRING_IRAM_ATTR String(const String &str);
-    explicit String(flash_string_t pstr, int length = -1);
-    String(const FlashString& fstr);
+    String() : ptr{nullptr, 0, 0}
+	{
+	}
+    String(const char *cstr);
+    String(const char *cstr, size_t length) : String()
+    {
+      if (cstr) copy(cstr, length);
+    }
+    String(const String &str) : String()
+    {
+      *this = str;
+    }
+    explicit String(flash_string_t pstr, int length = -1) : String()
+    {
+      setString(pstr, length);
+    }
 
 #ifdef __GXX_EXPERIMENTAL_CXX0X__
-    STRING_IRAM_ATTR String(String && rval);
-    STRING_IRAM_ATTR String(StringSumHelper && rval);
+    String(String && rval) : String()
+    {
+   	  move(rval);
+    }
+    String(StringSumHelper && rval);
 #endif
     explicit String(char c);
     explicit String(unsigned char, unsigned char base = 10);
     explicit String(int, unsigned char base = 10);
     explicit String(unsigned int, unsigned char base = 10);
     explicit String(long, unsigned char base = 10);
+    explicit String(long long, unsigned char base = 10);
     explicit String(unsigned long, unsigned char base = 10);
+    explicit String(unsigned long long, unsigned char base = 10);
     explicit String(float, unsigned char decimalPlaces=2);
     explicit String(double, unsigned char decimalPlaces=2);
-    ~String(void);
+    ~String(void)
+    {
+    	invalidate();
+    }
 
     void setString(const char *cstr, int length = -1);
     void setString(flash_string_t pstr, int length = -1);
@@ -146,27 +170,31 @@ class String
     // return true on success, false on failure (in which case, the string
     // is left unchanged).  reserve(0), if successful, will validate an
     // invalid string (i.e., "if (s)" will be true afterwards)
-    bool reserve(unsigned int size);
+    bool reserve(size_t size);
 
     /** @brief set the string length accordingly, expanding if necessary
      *  @param length required for string (nul terminator additional)
      *  @retval true on success, false on failure
      *  @note extra characters are undefined
      */
-    bool setLength(unsigned int length);
+    bool setLength(size_t length);
 
-    inline unsigned int length(void) const
+    inline size_t length(void) const
     {
-      return len;
+      return sso.set ? sso.len : ptr.len;
     }
 
     // creates a copy of the assigned value.  if the value is null or
     // invalid, or if the memory allocation fails, the string will be
     // marked as invalid ("if (s)" will be false).
-    String & STRING_IRAM_ATTR operator = (const String &rhs);
-    String & STRING_IRAM_ATTR operator = (const char *cstr);
+    String & operator = (const String &rhs);
+    String & operator = (const char *cstr);
 #ifdef __GXX_EXPERIMENTAL_CXX0X__
-    String & operator = (String && rval);
+    String & operator = (String && rval)
+    {
+      if (this != &rval) move(rval);
+      return *this;
+    }
     String & operator = (StringSumHelper && rval);
 #endif
 
@@ -175,21 +203,35 @@ class String
     // returns true on success, false on failure (in which case, the string
     // is left unchanged).  if the argument is null or invalid, the
     // concatenation is considered unsucessful.
-    bool concat(const String &str);
+    bool concat(const String &str)
+    {
+      return concat(str.cbuffer(), str.length());
+    }
+    bool concat(const FlashString& fstr);
     bool concat(const char *cstr);
-    bool STRING_IRAM_ATTR concat(const char *cstr, unsigned int length);
-    bool concat(char c);
-    bool concat(unsigned char c);
+    bool concat(const char *cstr, size_t length);
+    bool concat(char c)
+    {
+      return concat(&c, 1);
+    }
+    bool concat(unsigned char num);
     bool concat(int num);
     bool concat(unsigned int num);
     bool concat(long num);
+    bool concat(long long num);
     bool concat(unsigned long num);
+    bool concat(unsigned long long num);
     bool concat(float num);
     bool concat(double num);
   
     // if there's not enough memory for the concatenated value, the string
     // will be left unchanged (but this isn't signalled in any way)
     String & operator += (const String &rhs)
+    {
+      concat(rhs);
+      return (*this);
+    }
+    String & operator += (const FlashString &rhs)
     {
       concat(rhs);
       return (*this);
@@ -224,7 +266,17 @@ class String
       concat(num);
       return (*this);
     }
+    String & operator += (long long num)
+    {
+      concat(num);
+      return (*this);
+    }
     String & operator += (unsigned long num)
+    {
+      concat(num);
+      return (*this);
+    }
+    String & operator += (unsigned long long num)
     {
       concat(num);
       return (*this);
@@ -248,55 +300,92 @@ class String
     friend StringSumHelper & operator + (const StringSumHelper &lhs, unsigned int num);
     friend StringSumHelper & operator + (const StringSumHelper &lhs, long num);
     friend StringSumHelper & operator + (const StringSumHelper &lhs, unsigned long num);
+    friend StringSumHelper & operator + (const StringSumHelper &lhs, unsigned long long num);
     friend StringSumHelper & operator + (const StringSumHelper &lhs, float num);
     friend StringSumHelper & operator + (const StringSumHelper &lhs, double num);
 
     // comparison (only works w/ Strings and "strings")
     operator StringIfHelperType() const
     {
-      return buffer ? &String::StringIfHelper : 0;
+      return isNull() ? 0 : &String::StringIfHelper;
     }
-    int STRING_IRAM_ATTR compareTo(const String &s) const;
-    bool STRING_IRAM_ATTR equals(const String &s) const;
-    bool STRING_IRAM_ATTR equals(const char *cstr) const;
-    bool equals(const FlashString& fstr) const;
+    int compareTo(const char* cstr, size_t length) const;
+    int compareTo(const String &s) const
+    {
+   	  return compareTo(s.cbuffer(), s.length());
+    }
+    bool equals(const String &s) const
+    {
+    	return equals(s.cbuffer(), s.length());
+    }
+    bool equals(const char *cstr) const;
+    bool equals(const char *cstr, size_t length) const;
+    bool equals(const FlashString& fstr) const
+    {
+    	return fstr.equals(*this);
+    }
 
-    bool STRING_IRAM_ATTR operator == (const String &rhs) const
+    bool operator == (const String &rhs) const
     {
       return equals(rhs);
     }
-    bool STRING_IRAM_ATTR operator == (const char *cstr) const
+    bool operator == (const char *cstr) const
     {
       return equals(cstr);
     }
-    bool STRING_IRAM_ATTR operator==(const FlashString& fstr) const
+    bool operator==(const FlashString& fstr) const
     {
       return equals(fstr);
     }
-    bool STRING_IRAM_ATTR operator != (const String &rhs) const
+    bool operator != (const String &rhs) const
     {
       return !equals(rhs);
     }
-    bool STRING_IRAM_ATTR operator != (const char *cstr) const
+    bool operator != (const char *cstr) const
     {
       return !equals(cstr);
     }
-    bool operator < (const String &rhs) const;
-    bool operator > (const String &rhs) const;
-    bool operator <= (const String &rhs) const;
-    bool operator >= (const String &rhs) const;
+    bool operator < (const String &rhs) const
+    {
+      return compareTo(rhs) < 0;
+    }
+    bool operator > (const String &rhs) const
+    {
+      return compareTo(rhs) > 0;
+    }
+    bool operator <= (const String &rhs) const
+	{
+	  return compareTo(rhs) <= 0;
+	}
+    bool operator >= (const String &rhs) const
+    {
+      return compareTo(rhs) >= 0;
+    }
     bool equalsIgnoreCase(const char* cstr) const;
-    bool equalsIgnoreCase(const String &s2) const;
-    bool equalsIgnoreCase(const FlashString& fstr) const;
-    bool startsWith(const String &prefix) const;
-    bool startsWith(const String &prefix, unsigned int offset) const;
+    bool equalsIgnoreCase(const char* cstr, size_t length) const;
+    bool equalsIgnoreCase(const String &s2) const
+    {
+    	return equalsIgnoreCase(s2.cbuffer(), s2.length());
+    }
+    bool equalsIgnoreCase(const FlashString& fstr) const
+    {
+    	return fstr.equalsIgnoreCase(*this);
+    }
+    bool startsWith(const String &prefix) const
+    {
+    	return startsWith(prefix, 0);
+    }
+    bool startsWith(const String &prefix, size_t offset) const;
     bool endsWith(const String &suffix) const;
 
     // character acccess
-    char STRING_IRAM_ATTR charAt(unsigned int index) const;
-    void STRING_IRAM_ATTR setCharAt(unsigned int index, char c);
-    char STRING_IRAM_ATTR operator [](unsigned int index) const;
-    char& STRING_IRAM_ATTR operator [](unsigned int index);
+    char charAt(size_t index) const
+    {
+      return operator[](index);
+    }
+    void setCharAt(size_t index, char c);
+    char operator [](size_t index) const;
+    char& operator [](size_t index);
 
     /** @brief read contents of string into a buffer
      *  @param buf buffer to write data
@@ -306,35 +395,52 @@ class String
      *  @note Returned data always nul terminated so buffer size needs to take this
      *  into account
      */
-    unsigned int getBytes(unsigned char *buf, unsigned int bufsize, unsigned int index = 0) const;
+    size_t getBytes(unsigned char *buf, size_t bufsize, size_t index = 0) const;
 
-    void toCharArray(char *buf, unsigned int bufsize, unsigned int index = 0) const
+    void toCharArray(char *buf, size_t bufsize, size_t index = 0) const
     {
       getBytes((unsigned char *)buf, bufsize, index);
     }
-    const char* c_str() const { return buffer ?: empty.buffer; }
-    char* begin() { return buffer; }
-    char* end() { return buffer + length(); }
+    const char* c_str() const { return cbuffer() ?: empty.cbuffer(); }
+    char* begin() { return buffer(); }
+    char* end() { return buffer() + length(); }
     const char* begin() const { return c_str(); }
     const char* end() const { return c_str() + length(); }
   
     // search
-    int STRING_IRAM_ATTR indexOf(char ch) const;
-    int indexOf(char ch, unsigned int fromIndex) const;
-    int STRING_IRAM_ATTR indexOf(const String &str) const;
-    int indexOf(const String &s2, unsigned int fromIndex) const;
+    int indexOf(char ch, size_t fromIndex = 0) const;
+    int indexOf(const char* s2_buf, size_t fromIndex, size_t s2_len) const;
+    int indexOf(const char* s2_buf, size_t fromIndex = 0) const
+    {
+    	return indexOf(s2_buf, fromIndex, strlen(s2_buf));
+    }
+    int indexOf(const String &s2, size_t fromIndex = 0) const
+    {
+    	return indexOf(s2.cbuffer(), fromIndex, s2.length());
+    }
     int lastIndexOf(char ch) const;
-    int lastIndexOf(char ch, unsigned int fromIndex) const;
+    int lastIndexOf(char ch, size_t fromIndex) const;
     int lastIndexOf(const String &s2) const;
-    int lastIndexOf(const String &s2, unsigned int fromIndex) const;
-    String substring(unsigned int beginIndex) const { return substring(beginIndex, len); }
-    String substring(unsigned int beginIndex, unsigned int endIndex) const;
+    int lastIndexOf(const String &s2, size_t fromIndex) const;
+    int lastIndexOf(const char* s2_buf, size_t fromIndex, size_t s2_len) const;
+    String substring(size_t beginIndex) const { return substring(beginIndex, length()); }
+
+    /**
+     * @brief Get a substring of a String
+     * @param from Index of first character to retrieve
+     * @param to (optional) One-past the ending character to retrieve
+     */
+    String substring(size_t from, size_t to) const;
 
     // modification
     void replace(char find, char replace);
-    void replace(const String& find, const String& replace);
-    void remove(unsigned int index);
-    void remove(unsigned int index, unsigned int count);
+    bool replace(const String& find, const String& replace);
+    bool replace(const char* find_buf, size_t find_len, const char* replace_buf, size_t replace_len);
+    void remove(size_t index)
+    {
+    	remove(index, SIZE_MAX);
+    }
+    void remove(size_t index, size_t count);
     void toLowerCase(void);
     void toUpperCase(void);
     void trim(void);
@@ -342,24 +448,76 @@ class String
     // parsing/conversion
     long toInt(void) const;
     float toFloat(void) const;
-  
 
-    //void printTo(Print &p) const;
+	/// Max chars. (excluding NUL terminator) we can store in SSO mode
+	static constexpr size_t SSO_CAPACITY = STRING_OBJECT_SIZE - 2;
 
+protected:
+    /// Used when contents allocated on heap
+	struct PtrBuf {
+		char* buffer;		  // the actual char array
+		size_t len;			  // the String length (not counting the '\0')
+		size_t capacity;	  // the array length minus one (for the '\0')
+	};
+	// For small strings we can store data directly without requiring the heap
+	struct SsoBuf {
+		char buffer[SSO_CAPACITY + 1];
+		unsigned char len : 7;
+		unsigned char set : 1; ///< true for SSO mode
+	};
+	union {
+		PtrBuf ptr;
+		SsoBuf sso;
+	};
 
-  protected:
-    char *buffer = nullptr;	        // the actual char array
-    uint16_t capacity = 0;  // the array length minus one (for the '\0')
-    uint16_t len = 0;       // the String length (not counting the '\0')
-    //unsigned char flags;    // unused, for future features
+	static_assert(STRING_OBJECT_SIZE == sizeof(SsoBuf), "SSO Buffer alignment problem");
+	static_assert(STRING_OBJECT_SIZE >= sizeof(PtrBuf), "STRING_OBJECT_SIZE too small");
+	static_assert(STRING_OBJECT_SIZE <= 128, "STRING_OBJECT_SIZE too large (max. 128)");
+	static_assert(STRING_OBJECT_SIZE % 4 == 0, "STRING_OBJECT_SIZE must be a multiple of 4");
 
-  protected:
-    void STRING_IRAM_ATTR invalidate(void);
-    bool STRING_IRAM_ATTR changeBuffer(unsigned int maxStrLen);
+protected:
+	// Free any heap memory and set to non-SSO mode; isNull() will return true
+	void invalidate(void);
+
+    // String is Null (invalid) by default, i.e. non-SSO and null buffer
+    __forceinline bool isNull() const
+    {
+    	return !sso.set && (ptr.buffer == nullptr);
+    }
+
+    // Get writeable buffer pointer
+    __forceinline char* buffer()
+    {
+    	return sso.set ? sso.buffer : ptr.buffer;
+    }
+
+    // Get read-only buffer pointer
+    __forceinline const char* cbuffer() const
+    {
+    	return sso.set ? sso.buffer : ptr.buffer;
+    }
+
+    // Get currently assigned capacity for current mode
+    __forceinline size_t capacity() const
+    {
+    	return sso.set ? SSO_CAPACITY : ptr.capacity;
+    }
+
+    // Called whenever string length changes to ensure NUL terminator is set
+    __forceinline void setlen(size_t len)
+    {
+    	if(sso.set) {
+    		sso.len = len;
+    		sso.buffer[len] = '\0';
+    	} else {
+    		ptr.len = len;
+    		ptr.buffer[len] = '\0';
+    	}
+    }
 
     // copy and move
-    String & copy(const char *cstr, unsigned int length);
-    String& copy(flash_string_t pstr, unsigned int length);
+    String & copy(const char *cstr, size_t length);
+    String& copy(flash_string_t pstr, size_t length);
 #ifdef __GXX_EXPERIMENTAL_CXX0X__
     void move(String &rhs);
 #endif
@@ -375,12 +533,13 @@ class StringSumHelper : public String
     StringSumHelper(int num) : String(num) {}
     StringSumHelper(unsigned int num) : String(num) {}
     StringSumHelper(long num) : String(num) {}
+    StringSumHelper(long long num) : String(num) {}
     StringSumHelper(unsigned long num) : String(num) {}
+    StringSumHelper(unsigned long long num) : String(num) {}
     StringSumHelper(float num) : String(num) {}
     StringSumHelper(double num) : String(num) {}
 };
 
-#include "FlashString.h"
 #include "SplitString.h"
 
 #endif  // __cplusplus

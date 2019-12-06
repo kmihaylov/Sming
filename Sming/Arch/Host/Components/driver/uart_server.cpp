@@ -18,10 +18,10 @@
  ****/
 
 #include "uart_server.h"
-
-#include <espinc/peri.h>
+#include <espinc/uart_register.h>
 #include <SerialBuffer.h>
 #include <BitManipulations.h>
+#include <hostlib/keyb.h>
 
 const unsigned IDLE_SLEEP_MS = 100;
 
@@ -29,20 +29,106 @@ unsigned CUartServer::portBase = 10000;
 
 static CUartServer* uartServers[UART_COUNT];
 
-// Redirect the main serial port to console output
-static void redirectToConsole()
+class KeyboardThread : public CThread
 {
-	auto onNotify = [](uart_t* uart, uart_notify_code_t code) {
-		if(code == UART_NOTIFY_AFTER_WRITE){
-			size_t avail;
-			void* data;
-			while((avail = uart->tx_buffer->getReadData(data)) != 0) {
-				host_nputs(static_cast<const char*>(data), avail);
-				uart->tx_buffer->skipRead(avail);
-			}
+public:
+	KeyboardThread() : CThread("keyboard", 0)
+	{
+	}
+
+	void terminate()
+	{
+		done = true;
+		join();
+	}
+
+protected:
+	void* thread_routine() override;
+
+private:
+	bool done = false;
+};
+
+void* KeyboardThread::thread_routine()
+{
+	// Small applications can complete before we even get here!
+	msleep(50);
+	if(done) {
+		return nullptr;
+	}
+
+	keyb_raw();
+	while(!done) {
+		int c = getkey();
+		if(c == KEY_NONE) {
+			sched_yield();
+			continue;
 		}
-	};
-	uart_set_notify(UART0, onNotify);
+
+		auto uart = uart_get_uart(UART0);
+		assert(uart != nullptr);
+		auto buf = uart->rx_buffer;
+		assert(buf != nullptr);
+		do {
+			buf->writeChar(c);
+		} while((c = getkey()) != KEY_NONE);
+
+		uart->status |= UART_RXFIFO_TOUT_INT_ST;
+
+		interrupt_begin();
+
+		auto status = uart->status;
+		uart->status = 0;
+		if(status != 0 && uart->callback != nullptr) {
+			uart->callback(uart, status);
+		}
+
+		interrupt_end();
+	}
+	keyb_restore();
+	return nullptr;
+}
+
+static KeyboardThread* keyboardThread;
+
+static void destroyKeyboardThread()
+{
+	if(keyboardThread == nullptr) {
+		return;
+	}
+
+	keyboardThread->terminate();
+	delete keyboardThread;
+	keyboardThread = nullptr;
+}
+
+static void onUart0Notify(uart_t* uart, uart_notify_code_t code)
+{
+	switch(code) {
+	case UART_NOTIFY_AFTER_WRITE: {
+		size_t avail;
+		void* data;
+		while((avail = uart->tx_buffer->getReadData(data)) != 0) {
+			host_nputs(static_cast<const char*>(data), avail);
+			uart->tx_buffer->skipRead(avail);
+		}
+		break;
+	}
+
+	case UART_NOTIFY_AFTER_OPEN:
+		if(uart_rx_enabled(uart)) {
+			assert(keyboardThread == nullptr);
+			keyboardThread = new KeyboardThread;
+			keyboardThread->execute();
+		}
+		break;
+
+	case UART_NOTIFY_BEFORE_CLOSE:
+		destroyKeyboardThread();
+		break;
+
+	default:; // ignore
+	}
 }
 
 void CUartServer::startup(const UartServerConfig& config)
@@ -72,22 +158,31 @@ void CUartServer::startup(const UartServerConfig& config)
 
 	// If no ports have been enabled then redirect port 0 output to host console
 	if(config.enableMask == 0) {
-		redirectToConsole();
+		// Redirect the main serial port to console output
+		uart_set_notify(UART0, onUart0Notify);
 	}
 }
 
 void CUartServer::shutdown()
 {
+	destroyKeyboardThread();
+
 	for(unsigned i = 0; i < UART_COUNT; ++i) {
 		auto& server = uartServers[i];
+		if(server == nullptr) {
+			continue;
+		}
+
+		server->terminate();
 		delete server;
 		server = nullptr;
 	}
 }
 
-CUartServer::~CUartServer()
+void CUartServer::terminate()
 {
 	close();
+	join();
 	hostmsg("UART%u server destroyed", uart_nr);
 }
 
@@ -145,9 +240,9 @@ int CUartServer::serviceRead()
 			}
 			space -= read;
 			if(space == 0) {
-				bitSet(uart->status, UIFF);
+				uart->status |= UART_RXFIFO_FULL_INT_ST;
 			} else {
-				bitSet(uart->status, UITO);
+				uart->status |= UART_RXFIFO_TOUT_INT_ST;
 			}
 		}
 	}
@@ -185,7 +280,7 @@ int CUartServer::serviceWrite()
 	} while((avail = txbuf->getReadData(data)) != 0);
 
 	if(txbuf->isEmpty()) {
-		bitSet(uart->status, UIFE);
+		uart->status |= UART_TXFIFO_EMPTY_INT_ST;
 	} else {
 		txsem.post();
 	}
