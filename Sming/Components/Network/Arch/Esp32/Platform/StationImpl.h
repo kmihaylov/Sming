@@ -13,9 +13,10 @@
 #include <Platform/Station.h>
 #include <Platform/System.h>
 #include <esp_wifi.h>
+#include <memory>
 
 #ifdef ENABLE_SMART_CONFIG
-#include <esp_smartconfig.h>
+#include "../../../../../Arch/Esp32/Components/esp_wifi/include/esp32_smartconfig.h"
 #endif
 
 struct esp_netif_obj;
@@ -77,7 +78,7 @@ private:
 	bool wpsConfigure(uint8_t credIndex);
 #endif
 #ifdef ENABLE_SMART_CONFIG
-	void internalSmartConfig(sc_status status, void* pdata);
+	void internalSmartConfig(smartconfig_event_t status, void* pdata);
 #endif
 
 private:

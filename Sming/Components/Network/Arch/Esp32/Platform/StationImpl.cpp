@@ -352,7 +352,7 @@ void StationImpl::onSystemReady()
 
 #ifdef ENABLE_SMART_CONFIG
 
-void StationImpl::internalSmartConfig(sc_status status, void* pdata)
+void StationImpl::internalSmartConfig(smartconfig_event_t status, void* pdata)
 {
 	if(smartConfigEventInfo == nullptr) {
 		debug_e("smartconfig eventInfo is NULL");
@@ -362,19 +362,19 @@ void StationImpl::internalSmartConfig(sc_status status, void* pdata)
 	auto& evt = *smartConfigEventInfo;
 
 	switch(status) {
-	case SC_STATUS_WAIT:
-		debugf("SC_STATUS_WAIT\n");
+	case SC_EVENT_SCAN_DONE:
+		debugf("SC_EVENT_SCAN_DONE\n");
 		break;
-	case SC_STATUS_FIND_CHANNEL:
-		debugf("SC_STATUS_FIND_CHANNEL\n");
+	case SC_EVENT_FOUND_CHANNEL:
+		debugf("SC_EVENT_FOUND_CHANNEL\n");
 		break;
-	case SC_STATUS_GETTING_SSID_PSWD:
-		debugf("SC_STATUS_GETTING_SSID_PSWD\n");
+	case SC_EVENT_GOT_SSID_PSWD:
+		debugf("SC_EVENT_GOT_SSID_PSWD\n");
 		assert(pdata != nullptr);
 		smartConfigEventInfo->type = SmartConfigType(*static_cast<sc_type*>(pdata));
 		break;
-	case SC_STATUS_LINK: {
-		debugf("SC_STATUS_LINK\n");
+	case SC_EVENT_SEND_ACK_DONE: {
+		debugf("SC_EVENT_SEND_ACK_DONE\n");
 		auto cfg = static_cast<const station_config*>(pdata);
 		assert(cfg != nullptr);
 		evt.ssid = reinterpret_cast<const char*>(cfg->ssid);
@@ -383,9 +383,6 @@ void StationImpl::internalSmartConfig(sc_status status, void* pdata)
 		evt.bssid = cfg->bssid;
 		break;
 	}
-	case SC_STATUS_LINK_OVER:
-		debugf("SC_STATUS_LINK_OVER\n");
-		break;
 	}
 
 	bool processInternal = true;
@@ -395,17 +392,15 @@ void StationImpl::internalSmartConfig(sc_status status, void* pdata)
 
 	if(processInternal) {
 		switch(status) {
-		case SC_STATUS_WAIT:
+		case SC_EVENT_SCAN_DONE:
 			break;
-		case SC_STATUS_FIND_CHANNEL:
+		case SC_EVENT_FOUND_CHANNEL:
 			break;
-		case SC_STATUS_GETTING_SSID_PSWD:
-			break;
-		case SC_STATUS_LINK:
+		case SC_EVENT_GOT_SSID_PSWD:
 			config(evt.ssid, evt.password, true, true);
 			connect();
 			break;
-		case SC_STATUS_LINK_OVER:
+		case SC_EVENT_SEND_ACK_DONE:
 			smartConfigStop();
 			break;
 		}
@@ -418,35 +413,41 @@ bool StationImpl::smartConfigStart(SmartConfigType sctype, SmartConfigDelegate c
 		return false; // Already in progress
 	}
 
-	if(!smartconfig_set_type(sc_type(sctype))) {
+	if(esp_smartconfig_set_type(sc_type(sctype)) != ESP_OK) {
 		debug_e("smartconfig_set_type(%u) failed", sctype);
 		return false;
 	}
 
-	smartConfigEventInfo = new SmartConfigEventInfo;
+	//sstd::unique_ptr<SmartConfigEventInfo> smartConfigEventInfo;
 	if(smartConfigEventInfo == nullptr) {
 		return false;
 	}
 
 	// Bug in SDK Version 3 where a debug statement attempts to read from flash and throws a memory exception
 	// This is a workaround
+	// needed for esp-idf ??
+	/*
 	auto os_print = system_get_os_print();
 	if(os_print) {
 		system_set_os_print(false);
 	}
-
+	 */
 	smartConfigCallback = callback;
-	if(!smartconfig_start([](sc_status status, void* pdata) { station.internalSmartConfig(status, pdata); })) {
+
+	scSettings.enable_log=false;
+	scSettings.esp_touch_v2_enable_crypt=false;
+	scSettings.esp_touch_v2_key=cryptoKey;
+
+	if(esp_smartconfig_start(&scSettings) != ESP_OK) {
 		debug_e("smartconfig_start() failed");
 		smartConfigCallback = nullptr;
-		delete smartConfigEventInfo;
-		smartConfigEventInfo = nullptr;
+		smartConfigEventInfo.release();
 		return false;
 	}
 
-	if(os_print) {
+	/*if(os_print) {
 		system_set_os_print(true);
-	}
+	}*/
 
 	return true;
 }
