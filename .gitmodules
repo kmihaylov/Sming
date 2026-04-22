@@ -451,3 +451,12 @@
 # END OF .gitmodules
 #
 #################################################################################################
+[submodule "scd4x"]
+	path = Sming/Libraries/scd4x/scd4x
+	url = https://github.com/Sensirion/arduino-i2c-scd4x.git
+	ignore = dirty
+
+[submodule "Sming/Libraries/SensirionArduinoCore/arduino-core"]
+	path = Sming/Libraries/SensirionArduinoCore/SensirionArduinoCore
+	url = https://github.com/Sensirion/arduino-core.git
+	ignore = dirty
